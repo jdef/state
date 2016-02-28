@@ -1,19 +1,22 @@
 package state
 
 type (
+	// Context provides runtime context to state machines.
 	Context interface {
+		// Done returns a chan that closes to signal that the state machine
+		// should terminate.
 		Done() <-chan struct{}
 	}
 
+	// Event is a marker interface for event objects. Event's aren't required to
+	// exhibit any state or behavior by default.
 	Event interface {
-		IsEvent() bool
+		// Event is an interface marker func. It is never invoked.
+		Event() struct{}
 	}
 
-	// HijackEvent signals to a downstream state that a state transition is desired
-	// and that the downstream state should return the Fn given in this event.
-	HijackEvent interface {
-		Hijacked() Fn
-	}
+	// Event implementations may embed AbstractEvent to reduce boilerplate code.
+	AbstractEvent struct{}
 
 	EventSource interface {
 		Source() <-chan Event
@@ -28,19 +31,35 @@ type (
 		EventSink
 	}
 
-	State interface {
-		State() interface{}
-	}
-
 	Machine interface {
 		Events
-		State
+
+		// InitialState returns the initial state func of a state machine
 		InitialState() Fn
 	}
 
-	Fn func(_ Context, _ Machine) Fn
+	// Fn is a state func that implements behavior for a particular state. Upon
+	// state transition the next state is returned. Nil is returned to indicate
+	// that there is no next state and that the state machine should die.
+	Fn func(Context, Machine) Fn
+
+	// Hijackable is implemented by state machines that support being extended
+	// by sub-state machines. A sub-state machine triggers a state transition
+	// by sending desired next state to the chan returned by Hijack.
+	Hijackable interface {
+		Hijack() chan<- Fn
+	}
 )
 
+var (
+	// AbstractEvent implements Event
+	_ Event = &AbstractEvent{}
+)
+
+func (_ *AbstractEvent) Event() struct{} { return struct{}{} }
+
+// Run runs a state Machine, beginning with the InitialState() and transitioning
+// through states as returned by state funcs until reaching a nil state Fn.
 func Run(ctx Context, m Machine) {
 	state := m.InitialState()
 	for state != nil {
