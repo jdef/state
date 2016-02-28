@@ -14,14 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package demo
 
 import (
 	"time"
 
 	"github.com/jdef/state"
 	"github.com/jdef/state/demo/agent"
-	"github.com/jdef/state/demo/subagent"
 )
 
 type context chan struct{}
@@ -57,13 +56,8 @@ func sendHeartbeat(ctx state.Context, sink state.EventSink) {
 	}
 }
 
-func main() {
+func RunWith(a agent.Interface, pulse chan struct{}) {
 	ctx := make(context)
-	pulse := make(chan struct{})
-
-	var a agent.Interface
-
-	a = subagent.New(agent.New(pulse, 10))
 
 	ch := make(chan struct{})
 	go func() {
