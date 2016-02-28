@@ -10,49 +10,57 @@ import (
 //
 
 type Interface interface {
-	agent.AgentInterface
+	agent.Interface
 	internal() *Wrapper
 }
 
 type Wrapper struct {
-	agent.AgentInterface
+	agent.Interface
 	eventChan chan state.Event
 }
 
-func New(a agent.AgentInterface) Interface {
+func New(a agent.Interface) Interface {
 	return &Wrapper{
-		AgentInterface: a,
-		eventChan:      make(chan state.Event),
+		Interface: a,
+		eventChan: make(chan state.Event),
 	}
 }
 
-// Wrapper implements agent.AgentInterface
-var _ agent.AgentInterface = &Wrapper{}
+// Wrapper implements agent.Interface
+var _ agent.Interface = &Wrapper{}
 
 // Connected overrides the default implementation
-func (ha *Wrapper) Connected() state.Fn        { return connectedStage1 }
-func (ha *Wrapper) Disconnected() state.Fn     { return happilyDisconnected }
-func (ha *Wrapper) Terminating() state.Fn      { return happilyTerminating }
 func (ha *Wrapper) InitialState() state.Fn     { return happilyDisconnected }
+func (ha *Wrapper) Disconnected() state.Fn     { return happilyDisconnected }
+func (ha *Wrapper) Connected() state.Fn        { return connectedStage1 }
+func (ha *Wrapper) Terminating() state.Fn      { return happilyTerminating }
 func (ha *Wrapper) Sink() chan<- state.Event   { return ha.eventChan }
 func (ha *Wrapper) Source() <-chan state.Event { return ha.eventChan }
 func (ha *Wrapper) internal() *Wrapper         { return ha }
 
-type SuperMachine struct {
-	Interface
+//
+// some glue that simplifies interaction with the super-state machine
+//
+
+type upstream struct {
+	agent.Interface
+}
+
+func superMachine(m state.Machine) *upstream {
+	return &upstream{m.(agent.Interface)}
 }
 
 // Source returns the upstream source so that we may pass this upstream instance
 // to a upstream state handler and it will read events from its own source, not wrapper's.
-func (d *SuperMachine) Source() <-chan state.Event {
+func (d *upstream) Source() <-chan state.Event {
 	return d.Super().Source()
 }
 
-func (d *SuperMachine) Super() agent.AgentInterface {
-	return d.Interface.internal().AgentInterface
+func (d *upstream) Super() agent.Interface {
+	return d.Interface.(Interface).internal().Interface
 }
 
-func (d *SuperMachine) Send(ctx state.Context, e state.Event) {
+func (d *upstream) Send(ctx state.Context, e state.Event) {
 	// TODO(jdef) this is ugly, we probably need/want something better if
 	// we're at all concerned about preserving event order
 	go func() {
@@ -64,19 +72,23 @@ func (d *SuperMachine) Send(ctx state.Context, e state.Event) {
 	}()
 }
 
+//
+// states of the sub-state machine
+//
+
 func happilyTerminating(ctx state.Context, m state.Machine) state.Fn {
 	println("happily terminating")
 	defer println("<leaving happily terminating>")
 
 	var (
-		upstream = &SuperMachine{m.(Interface)}
+		upstream = superMachine(m)
 	)
 
 	// we'd normally clean up any resources here.
 	// there's no good reason for overriding the terminating state in this
 	// case, we just do it for demo purposes.
 
-	return upstream.Super().(agent.AgentInterface).Terminating()(ctx, upstream)
+	return upstream.Super().(agent.Interface).Terminating()(ctx, upstream)
 }
 
 func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
@@ -84,7 +96,7 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily disconnected>")
 
 	var (
-		upstream = &SuperMachine{m.(Interface)}
+		upstream = superMachine(m)
 		fn       = make(chan state.Fn)
 	)
 
@@ -121,7 +133,7 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 
 	var (
 		wrapper  = m.(Interface)
-		upstream = &SuperMachine{wrapper}
+		upstream = superMachine(wrapper)
 		fn       = make(chan state.Fn)
 	)
 
@@ -163,7 +175,7 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected2>")
 
 	var (
-		upstream = &SuperMachine{m.(Interface)}
+		upstream = superMachine(m)
 		fn       = make(chan state.Fn)
 	)
 

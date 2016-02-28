@@ -5,7 +5,7 @@ import (
 )
 
 type (
-	AgentInterface interface {
+	Interface interface {
 		state.Machine
 		state.Hijackable // support sub-state machines
 
@@ -31,10 +31,10 @@ type (
 	Heartbeat         struct{ state.AbstractEvent }
 )
 
-// Agent implements AgentInterface
-var _ AgentInterface = &Agent{}
+// Agent implements Interface
+var _ Interface = &Agent{}
 
-func New(pulse chan<- struct{}) AgentInterface {
+func New(pulse chan<- struct{}) Interface {
 	return &Agent{
 		events: make(chan state.Event),
 		pulse:  pulse,
@@ -53,7 +53,7 @@ func (a *Agent) get() *Agent                { return a }
 
 func disconnected(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving disconnected>")
-	agent := m.(AgentInterface)
+	agent := m.(Interface)
 	for {
 		select {
 		case event := <-m.Source():
@@ -74,7 +74,7 @@ func disconnected(ctx state.Context, m state.Machine) state.Fn {
 
 func connected(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving connected>")
-	agent := m.(AgentInterface)
+	agent := m.(Interface)
 	for {
 		select {
 		case event := <-m.Source():

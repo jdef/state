@@ -45,7 +45,7 @@ func main() {
 	ctx := make(context)
 	pulse := make(chan struct{})
 
-	var a agent.AgentInterface
+	var a agent.Interface
 
 	a = wrapper.New(agent.New(pulse))
 
