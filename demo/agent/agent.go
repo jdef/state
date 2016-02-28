@@ -34,9 +34,9 @@ type (
 // Agent implements Interface
 var _ Interface = &Agent{}
 
-func New(pulse chan<- struct{}) Interface {
+func New(pulse chan<- struct{}, backlog int) Interface {
 	return &Agent{
-		events: make(chan state.Event),
+		events: make(chan state.Event, backlog),
 		pulse:  pulse,
 		hijack: make(chan state.Fn),
 	}

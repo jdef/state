@@ -47,7 +47,7 @@ func main() {
 
 	var a agent.Interface
 
-	a = subagent.New(agent.New(pulse))
+	a = subagent.New(agent.New(pulse, 10))
 
 	ch := make(chan struct{})
 	go func() {

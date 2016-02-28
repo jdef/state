@@ -14,6 +14,10 @@ type Interface interface {
 	internal() *Subagent
 }
 
+// Subagent is a sub-state machine implementation that extends the machine implemented
+// in the agent package. In particular the Connected state is broken into two sub-states,
+// connectedStage1 and connectedStage2. This is done purely to illustrate how to use the
+// Hijackable interface to instigate sub-state transitions.
 type Subagent struct {
 	agent.Interface
 	eventChan chan state.Event
@@ -61,17 +65,16 @@ func (d *upstream) super() agent.Interface {
 	return d.Interface.(Interface).internal().Interface
 }
 
-// Send forwards an event to the super-state machine
+// Send forwards an event to the super-state machine. The super-state machine should
+// probably have a buffered event queue if there's a party external to the state
+// machine substrate that's also feeding events into the machine, otherwise this
+// may block indefinitely.
 func (d *upstream) send(ctx state.Context, e state.Event) {
-	// TODO(jdef) this is ugly, we probably need/want something better if
-	// we're at all concerned about preserving event order
-	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		case d.super().Sink() <- e:
-		}
-	}()
+	select {
+	case <-ctx.Done():
+		return
+	case d.super().Sink() <- e:
+	}
 }
 
 //
@@ -88,7 +91,7 @@ func happilyTerminating(ctx state.Context, m state.Machine) state.Fn {
 	// there's no good reason for overriding the terminating state in this
 	// case, we just do it for demo purposes.
 
-	return upstream.super().(agent.Interface).Terminating()(ctx, upstream)
+	return upstream.super().Terminating()(ctx, upstream)
 }
 
 func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
@@ -132,8 +135,7 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected1>")
 
 	var (
-		subagent = m.(Interface)
-		upstream = superMachine(subagent)
+		upstream = superMachine(m)
 		fn       = make(chan state.Fn)
 	)
 
