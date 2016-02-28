@@ -11,32 +11,32 @@ import (
 
 type Interface interface {
 	agent.Interface
-	internal() *Wrapper
+	internal() *Subagent
 }
 
-type Wrapper struct {
+type Subagent struct {
 	agent.Interface
 	eventChan chan state.Event
 }
 
 func New(a agent.Interface) Interface {
-	return &Wrapper{
+	return &Subagent{
 		Interface: a,
 		eventChan: make(chan state.Event),
 	}
 }
 
-// Wrapper implements agent.Interface
-var _ agent.Interface = &Wrapper{}
+// Subagent implements agent.Interface
+var _ agent.Interface = &Subagent{}
 
-// Connected overrides the default implementation
-func (ha *Wrapper) InitialState() state.Fn     { return happilyDisconnected }
-func (ha *Wrapper) Disconnected() state.Fn     { return happilyDisconnected }
-func (ha *Wrapper) Connected() state.Fn        { return connectedStage1 }
-func (ha *Wrapper) Terminating() state.Fn      { return happilyTerminating }
-func (ha *Wrapper) Sink() chan<- state.Event   { return ha.eventChan }
-func (ha *Wrapper) Source() <-chan state.Event { return ha.eventChan }
-func (ha *Wrapper) internal() *Wrapper         { return ha }
+func (ha *Subagent) Hijack() chan<- state.Fn    { return nil } // subagent is not hijackable
+func (ha *Subagent) InitialState() state.Fn     { return happilyDisconnected }
+func (ha *Subagent) Disconnected() state.Fn     { return happilyDisconnected }
+func (ha *Subagent) Connected() state.Fn        { return connectedStage1 }
+func (ha *Subagent) Terminating() state.Fn      { return happilyTerminating }
+func (ha *Subagent) Sink() chan<- state.Event   { return ha.eventChan }
+func (ha *Subagent) Source() <-chan state.Event { return ha.eventChan }
+func (ha *Subagent) internal() *Subagent        { return ha }
 
 //
 // some glue that simplifies interaction with the super-state machine
@@ -51,23 +51,25 @@ func superMachine(m state.Machine) *upstream {
 }
 
 // Source returns the upstream source so that we may pass this upstream instance
-// to a upstream state handler and it will read events from its own source, not wrapper's.
+// to a upstream state handler and it will read events from its own source, not subagent's.
 func (d *upstream) Source() <-chan state.Event {
-	return d.Super().Source()
+	return d.super().Source()
 }
 
-func (d *upstream) Super() agent.Interface {
+// super returns the super-state machine
+func (d *upstream) super() agent.Interface {
 	return d.Interface.(Interface).internal().Interface
 }
 
-func (d *upstream) Send(ctx state.Context, e state.Event) {
+// Send forwards an event to the super-state machine
+func (d *upstream) send(ctx state.Context, e state.Event) {
 	// TODO(jdef) this is ugly, we probably need/want something better if
 	// we're at all concerned about preserving event order
 	go func() {
 		select {
 		case <-ctx.Done():
 			return
-		case d.Super().Sink() <- e:
+		case d.super().Sink() <- e:
 		}
 	}()
 }
@@ -80,15 +82,13 @@ func happilyTerminating(ctx state.Context, m state.Machine) state.Fn {
 	println("happily terminating")
 	defer println("<leaving happily terminating>")
 
-	var (
-		upstream = superMachine(m)
-	)
+	upstream := superMachine(m)
 
 	// we'd normally clean up any resources here.
 	// there's no good reason for overriding the terminating state in this
 	// case, we just do it for demo purposes.
 
-	return upstream.Super().(agent.Interface).Terminating()(ctx, upstream)
+	return upstream.super().(agent.Interface).Terminating()(ctx, upstream)
 }
 
 func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
@@ -103,7 +103,7 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 	// we're happy to let upstream's Disconnected state handler
 	// drive the state transition when it's ready
 	go func() {
-		fn <- upstream.Super().Disconnected()(ctx, upstream)
+		fn <- upstream.super().Disconnected()(ctx, upstream)
 	}()
 
 	for {
@@ -119,7 +119,7 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 			}
 
 			// forward the event upstream
-			upstream.Send(ctx, event)
+			upstream.send(ctx, event)
 
 		case f := <-fn:
 			return f
@@ -132,15 +132,15 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected1>")
 
 	var (
-		wrapper  = m.(Interface)
-		upstream = superMachine(wrapper)
+		subagent = m.(Interface)
+		upstream = superMachine(subagent)
 		fn       = make(chan state.Fn)
 	)
 
 	// we're happy to let upstream's Connected state handler
 	// drive the state transition when it's ready
 	go func() {
-		fn <- upstream.Super().Connected()(ctx, upstream)
+		fn <- upstream.super().Connected()(ctx, upstream)
 	}()
 
 	for {
@@ -157,12 +157,15 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 				// we'll still forward the heartbeat but it may be
 				// processed after we transition to stage2. for this
 				// demo it doesn't matter if that happens.
-				wrapper.Hijack() <- connectedStage2
+				select {
+				case upstream.super().Hijack() <- connectedStage2:
+				case <-ctx.Done():
+				}
 			default:
 			}
 
 			// forward the event upstream
-			upstream.Send(ctx, event)
+			upstream.send(ctx, event)
 
 		case f := <-fn:
 			return f
@@ -182,7 +185,7 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 	// we're happy to let upstream's Connected state handler
 	// drive the state transition when it's ready
 	go func() {
-		fn <- upstream.Super().Connected()(ctx, upstream)
+		fn <- upstream.super().Connected()(ctx, upstream)
 	}()
 
 	for {
@@ -198,7 +201,7 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 			}
 
 			// forward the event upstream
-			upstream.Send(ctx, event)
+			upstream.send(ctx, event)
 
 		case f := <-fn:
 			return f
