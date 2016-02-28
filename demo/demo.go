@@ -23,12 +23,6 @@ import (
 	"github.com/jdef/state/demo/agent"
 )
 
-type context chan struct{}
-
-func (ctx context) Done() <-chan struct{} {
-	return ctx
-}
-
 func logPulse(ctx state.Context, pulse <-chan struct{}) {
 	for {
 		select {
@@ -57,7 +51,7 @@ func sendHeartbeat(ctx state.Context, sink state.EventSink) {
 }
 
 func RunWith(a agent.Interface, pulse chan struct{}) {
-	ctx := make(context)
+	ctx := make(state.SimpleContext)
 
 	ch := make(chan struct{})
 	go func() {
@@ -79,6 +73,6 @@ func RunWith(a agent.Interface, pulse chan struct{}) {
 
 	time.Sleep(5 * time.Second)
 
-	close(ctx) // tell the state machine to terminate
+	ctx.Cancel() // tell the state machine to terminate
 	<-ch
 }

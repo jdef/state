@@ -22,8 +22,7 @@ import (
 
 type (
 	Interface interface {
-		state.Machine
-		state.Hijackable // support sub-state machines
+		state.SuperMachine // support sub-state machines
 
 		Disconnected() state.Fn
 		Connected() state.Fn
@@ -33,7 +32,7 @@ type (
 	}
 
 	Agent struct {
-		events chan state.Event
+		state.Machine
 		pulse  chan<- struct{}
 		hijack chan state.Fn
 	}
@@ -52,22 +51,22 @@ var _ Interface = &Agent{}
 
 func New(pulse chan<- struct{}, backlog int) Interface {
 	return &Agent{
-		events: make(chan state.Event, backlog),
-		pulse:  pulse,
-		hijack: make(chan state.Fn),
+		Machine: state.NewSimpleMachine(backlog, disconnected),
+		pulse:   pulse,
+		hijack:  make(chan state.Fn),
 	}
 }
 
-func (a *Agent) Hijack() chan<- state.Fn    { return a.hijack }
-func (a *Agent) Source() <-chan state.Event { return a.events }
-func (a *Agent) Sink() chan<- state.Event   { return a.events }
-func (a *Agent) Disconnected() state.Fn     { return disconnected }
-func (a *Agent) Connected() state.Fn        { return connected }
-func (a *Agent) Terminating() state.Fn      { return terminating }
-func (a *Agent) InitialState() state.Fn     { return disconnected }
-func (a *Agent) get() *Agent                { return a }
+func (a *Agent) Hijack() chan<- state.Fn                       { return a.hijack }
+func (a *Agent) SubMachine(l int, f state.Fn) state.SubMachine { return newSubMachine(a, l, f) }
+
+func (a *Agent) Disconnected() state.Fn { return disconnected }
+func (a *Agent) Connected() state.Fn    { return connected }
+func (a *Agent) Terminating() state.Fn  { return terminating }
+func (a *Agent) get() *Agent            { return a }
 
 func disconnected(ctx state.Context, m state.Machine) state.Fn {
+	println("disconnected")
 	defer println("<leaving disconnected>")
 	agent := m.(Interface)
 	for {
@@ -89,6 +88,7 @@ func disconnected(ctx state.Context, m state.Machine) state.Fn {
 }
 
 func connected(ctx state.Context, m state.Machine) state.Fn {
+	println("connected")
 	defer println("<leaving connected>")
 	agent := m.(Interface)
 	for {
@@ -110,20 +110,21 @@ func connected(ctx state.Context, m state.Machine) state.Fn {
 }
 
 func terminating(ctx state.Context, m state.Machine) state.Fn {
+	println("terminating")
 	defer println("<leaving terminating>")
 	return nil
 }
 
 func (a *Agent) doConnect(_ *ConnectRequest) {
-	println("connected()")
+	println("do-connect")
 }
 
 func (a *Agent) doDisconnect(_ *DisconnectRequest) {
-	println("disconnected()")
+	println("do-disconnected")
 }
 
 func (a *Agent) doHeartbeat(ctx state.Context, _ *Heartbeat) {
-	println("heartbeat()")
+	println("do-heartbeat")
 	select {
 	case a.pulse <- struct{}{}:
 	case <-ctx.Done():

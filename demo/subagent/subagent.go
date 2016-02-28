@@ -33,65 +33,25 @@ type Interface interface {
 // Subagent is a sub-state machine implementation that extends the machine implemented
 // in the agent package. In particular the Connected state is broken into two sub-states,
 // connectedStage1 and connectedStage2. This is done purely to illustrate how to use the
-// Hijackable interface to instigate sub-state transitions.
+// SuperMachine interface to instigate sub-state transitions.
 type Subagent struct {
-	agent.Interface
-	eventChan chan state.Event
+	agent.SubMachineInterface
 }
 
 func New(a agent.Interface) Interface {
-	return &Subagent{
-		Interface: a,
-		eventChan: make(chan state.Event),
-	}
+	return &Subagent{a.SubMachine(0, happilyDisconnected).(agent.SubMachineInterface)}
 }
 
 // Subagent implements agent.Interface
 var _ agent.Interface = &Subagent{}
 
-func (ha *Subagent) Hijack() chan<- state.Fn    { return nil } // subagent is not hijackable
-func (ha *Subagent) InitialState() state.Fn     { return happilyDisconnected }
-func (ha *Subagent) Disconnected() state.Fn     { return happilyDisconnected }
-func (ha *Subagent) Connected() state.Fn        { return connectedStage1 }
-func (ha *Subagent) Terminating() state.Fn      { return happilyTerminating }
-func (ha *Subagent) Sink() chan<- state.Event   { return ha.eventChan }
-func (ha *Subagent) Source() <-chan state.Event { return ha.eventChan }
-func (ha *Subagent) internal() *Subagent        { return ha }
+func (ha *Subagent) Hijack() chan<- state.Fn                   { return nil } // subagent is not hijackable
+func (ha *Subagent) SubMachine(int, state.Fn) state.SubMachine { return nil } // subagent is not hijackable
 
-//
-// some glue that simplifies interaction with the super-state machine
-//
-
-type upstream struct {
-	agent.Interface
-}
-
-func superMachine(m state.Machine) *upstream {
-	return &upstream{m.(agent.Interface)}
-}
-
-// Source returns the upstream source so that we may pass this upstream instance
-// to a upstream state handler and it will read events from its own source, not subagent's.
-func (d *upstream) Source() <-chan state.Event {
-	return d.super().Source()
-}
-
-// super returns the super-state machine
-func (d *upstream) super() agent.Interface {
-	return d.Interface.(Interface).internal().Interface
-}
-
-// Send forwards an event to the super-state machine. The super-state machine should
-// probably have a buffered event queue if there's a party external to the state
-// machine substrate that's also feeding events into the machine, otherwise this
-// may block indefinitely.
-func (d *upstream) send(ctx state.Context, e state.Event) {
-	select {
-	case <-ctx.Done():
-		return
-	case d.super().Sink() <- e:
-	}
-}
+func (ha *Subagent) Disconnected() state.Fn { return happilyDisconnected }
+func (ha *Subagent) Connected() state.Fn    { return connectedStage1 }
+func (ha *Subagent) Terminating() state.Fn  { return happilyTerminating }
+func (ha *Subagent) internal() *Subagent    { return ha }
 
 //
 // states of the sub-state machine
@@ -101,13 +61,13 @@ func happilyTerminating(ctx state.Context, m state.Machine) state.Fn {
 	println("happily terminating")
 	defer println("<leaving happily terminating>")
 
-	upstream := superMachine(m)
+	subagent := m.(agent.SubMachineInterface)
 
 	// we'd normally clean up any resources here.
 	// there's no good reason for overriding the terminating state in this
 	// case, we just do it for demo purposes.
 
-	return upstream.super().Terminating()(ctx, upstream)
+	return subagent.Super().(agent.Interface).Terminating()(ctx, agent.Masquerade(subagent))
 }
 
 func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
@@ -115,14 +75,14 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily disconnected>")
 
 	var (
-		upstream = superMachine(m)
+		subagent = m.(agent.SubMachineInterface)
 		fn       = make(chan state.Fn)
 	)
 
 	// we're happy to let upstream's Disconnected state handler
 	// drive the state transition when it's ready
 	go func() {
-		fn <- upstream.super().Disconnected()(ctx, upstream)
+		fn <- subagent.Super().(agent.Interface).Disconnected()(ctx, agent.Masquerade(subagent))
 	}()
 
 	for {
@@ -138,7 +98,7 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 			}
 
 			// forward the event upstream
-			upstream.send(ctx, event)
+			subagent.Forward(ctx, event)
 
 		case f := <-fn:
 			return f
@@ -151,14 +111,14 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected1>")
 
 	var (
-		upstream = superMachine(m)
+		subagent = m.(agent.SubMachineInterface)
 		fn       = make(chan state.Fn)
 	)
 
 	// we're happy to let upstream's Connected state handler
 	// drive the state transition when it's ready
 	go func() {
-		fn <- upstream.super().Connected()(ctx, upstream)
+		fn <- subagent.Super().(agent.Interface).Connected()(ctx, agent.Masquerade(subagent))
 	}()
 
 	for {
@@ -176,14 +136,19 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 				// processed after we transition to stage2. for this
 				// demo it doesn't matter if that happens.
 				select {
-				case upstream.super().Hijack() <- connectedStage2:
+				case subagent.Super().Hijack() <- connectedStage2:
+					select {
+					case <-ctx.Done():
+					case f := <-fn:
+						return f
+					}
 				case <-ctx.Done():
 				}
 			default:
 			}
 
 			// forward the event upstream
-			upstream.send(ctx, event)
+			subagent.Forward(ctx, event)
 
 		case f := <-fn:
 			return f
@@ -196,14 +161,14 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected2>")
 
 	var (
-		upstream = superMachine(m)
+		subagent = m.(agent.SubMachineInterface)
 		fn       = make(chan state.Fn)
 	)
 
 	// we're happy to let upstream's Connected state handler
 	// drive the state transition when it's ready
 	go func() {
-		fn <- upstream.super().Connected()(ctx, upstream)
+		fn <- subagent.Super().(agent.Interface).Connected()(ctx, agent.Masquerade(subagent))
 	}()
 
 	for {
@@ -219,7 +184,7 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 			}
 
 			// forward the event upstream
-			upstream.send(ctx, event)
+			subagent.Forward(ctx, event)
 
 		case f := <-fn:
 			return f
