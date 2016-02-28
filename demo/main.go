@@ -5,7 +5,7 @@ import (
 
 	"github.com/jdef/state"
 	"github.com/jdef/state/demo/agent"
-	"github.com/jdef/state/demo/wrapper"
+	"github.com/jdef/state/demo/subagent"
 )
 
 type context chan struct{}
@@ -47,7 +47,7 @@ func main() {
 
 	var a agent.Interface
 
-	a = wrapper.New(agent.New(pulse))
+	a = subagent.New(agent.New(pulse))
 
 	ch := make(chan struct{})
 	go func() {

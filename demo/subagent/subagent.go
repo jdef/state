@@ -1,4 +1,4 @@
-package wrapper
+package subagent
 
 import (
 	"github.com/jdef/state"
