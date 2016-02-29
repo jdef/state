@@ -16,35 +16,107 @@ limitations under the License.
 
 package agent
 
+// TODO(jdef) all of this code could easily be auto-generated for state machines that
+// want to support sub-state machine extension.
+
 import (
 	"github.com/jdef/state"
 )
 
+/*
+ * super-state machine helper code follows
+ */
+
 type (
-	// subMachine is a helper for quickly building sub-state machines that
-	// extend Agent functionality. Sub-state machines typically need their
-	// own event queue and may want to override the initial state func.
-	subMachine struct {
+	// TODO(jdef) I don't like this name, need to revisit
+	SuperMachineInterface interface {
 		Interface
-		events       chan state.Event
-		initialState state.Fn
+		state.SuperMachine
 	}
 
+	superMachine struct {
+		Interface
+		hijackChan chan state.Fn
+	}
+)
+
+func AsSuperMachine(i Interface) SuperMachineInterface {
+	return &superMachine{Interface: i, hijackChan: make(chan state.Fn)}
+}
+
+func (a *superMachine) hijack() <-chan state.Fn                       { return a.hijackChan }
+func (a *superMachine) Hijack() chan<- state.Fn                       { return a.hijackChan }
+func (a *superMachine) SubMachine(l int, f state.Fn) state.SubMachine { return newSubMachine(a, l, f) }
+
+/*
+// hijack attempts to obtain a hijack chan from the given Machine and will return
+// a readable chan upon success.
+func hijack(m state.Machine) <-chan state.Fn {
+	for {
+		v := reflect.ValueOf(m)
+		if v.Type().Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		v = v.FieldByName("SubMachineInterface")
+		if v.IsValid() {
+			if sm, ok := v.Interface().(SubMachineInterface); ok {
+				m = sm
+				continue
+			}
+		}
+		break
+	}
+	for {
+		v := reflect.ValueOf(m)
+		if v.Type().Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		v = v.FieldByName("SuperMachineInterface")
+		if v.IsValid() {
+			if sm, ok := v.Interface().(SuperMachineInterface); ok {
+				m = sm
+				continue
+			}
+		}
+		break
+	}
+	if sm, ok := m.(*superMachine); ok {
+		return sm.hijackChan
+	}
+	panic(fmt.Sprintf("cannot find hijack chan: sm=%#+v", m))
+	return nil
+}
+*/
+
+/*
+ * sub-state machine helper code follows
+ */
+
+type (
 	// TODO(jdef) I don't like this name, need to revisit
 	SubMachineInterface interface {
 		Interface
 		state.SubMachine
+	}
+
+	// subMachine is a helper for quickly building sub-state machines that
+	// extend Agent functionality. Sub-state machines typically need their
+	// own event queue and may want to override the initial state func.
+	subMachine struct {
+		SuperMachineInterface
+		events       chan state.Event
+		initialState state.Fn
 	}
 )
 
 // subMachine implements state.SubMachineInterface
 var _ SubMachineInterface = &subMachine{}
 
-func newSubMachine(super Interface, queueLength int, initialState state.Fn) state.SubMachine {
+func newSubMachine(super SuperMachineInterface, queueLength int, initialState state.Fn) state.SubMachine {
 	return &subMachine{
-		Interface:    super,
-		events:       make(chan state.Event, queueLength),
-		initialState: initialState,
+		SuperMachineInterface: super,
+		events:                make(chan state.Event, queueLength),
+		initialState:          initialState,
 	}
 }
 
@@ -52,7 +124,7 @@ func (m *subMachine) InitialState() state.Fn {
 	if m.initialState != nil {
 		return m.initialState
 	}
-	return m.Interface.InitialState()
+	return m.SuperMachineInterface.InitialState()
 }
 
 // Forward sends an event to the super-state machine. The super-state machine should
@@ -63,13 +135,15 @@ func (m *subMachine) Forward(ctx state.Context, e state.Event) {
 	select {
 	case <-ctx.Done():
 		return
-	case m.Super().Sink() <- e:
+	case m.Super().(SuperMachineInterface).Sink() <- e:
 	}
 }
 
-func (m *subMachine) Source() <-chan state.Event { return m.events }
-func (m *subMachine) Sink() chan<- state.Event   { return m.events }
-func (m *subMachine) Super() state.SuperMachine  { return m.Interface }
+func (m *subMachine) Source() <-chan state.Event                { return m.events }
+func (m *subMachine) Sink() chan<- state.Event                  { return m.events }
+func (m *subMachine) Super() state.SuperMachine                 { return m.SuperMachineInterface }
+func (m *subMachine) Hijack() chan<- state.Fn                   { return nil } // is not hijackable
+func (m *subMachine) SubMachine(int, state.Fn) state.SubMachine { return nil } // is not hijackable
 
 // Masquerade returns a reference to an imposter of the super-machine that may
 // be passed to the super-machine's state handlers for upstream event delegation.
@@ -86,5 +160,5 @@ type masq struct {
 // to a super-state handler and it will read events from its own source, instead
 // of sub-machine's.
 func (m *masq) Source() <-chan state.Event {
-	return m.Super().Source()
+	return m.Super().(SuperMachineInterface).Source()
 }

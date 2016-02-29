@@ -22,19 +22,19 @@ import (
 
 type (
 	Interface interface {
-		state.SuperMachine // support sub-state machines
+		state.Machine
 
 		Disconnected() state.Fn
 		Connected() state.Fn
 		Terminating() state.Fn
 
 		get() *Agent
+		hijack() <-chan state.Fn // support for sub-state machines
 	}
 
 	Agent struct {
 		state.Machine
-		pulse  chan<- struct{}
-		hijack chan state.Fn
+		pulse chan<- struct{}
 	}
 
 	//
@@ -53,17 +53,15 @@ func New(pulse chan<- struct{}, backlog int) Interface {
 	return &Agent{
 		Machine: state.NewSimpleMachine(backlog, disconnected),
 		pulse:   pulse,
-		hijack:  make(chan state.Fn),
 	}
 }
-
-func (a *Agent) Hijack() chan<- state.Fn                       { return a.hijack }
-func (a *Agent) SubMachine(l int, f state.Fn) state.SubMachine { return newSubMachine(a, l, f) }
 
 func (a *Agent) Disconnected() state.Fn { return disconnected }
 func (a *Agent) Connected() state.Fn    { return connected }
 func (a *Agent) Terminating() state.Fn  { return terminating }
-func (a *Agent) get() *Agent            { return a }
+
+func (a *Agent) get() *Agent             { return a }
+func (a *Agent) hijack() <-chan state.Fn { return nil }
 
 func disconnected(ctx state.Context, m state.Machine) state.Fn {
 	println("disconnected")
@@ -79,7 +77,7 @@ func disconnected(ctx state.Context, m state.Machine) state.Fn {
 			case *Heartbeat:
 				agent.get().doHeartbeat(ctx, event)
 			}
-		case fn := <-agent.get().hijack:
+		case fn := <-agent.hijack():
 			return fn
 		case <-ctx.Done():
 			return agent.Terminating()
@@ -101,7 +99,7 @@ func connected(ctx state.Context, m state.Machine) state.Fn {
 			case *Heartbeat:
 				agent.get().doHeartbeat(ctx, event)
 			}
-		case fn := <-agent.get().hijack:
+		case fn := <-agent.hijack():
 			return fn
 		case <-ctx.Done():
 			return agent.Terminating()

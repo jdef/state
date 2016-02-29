@@ -76,7 +76,6 @@ type (
 	// by sub-state machines. A sub-state machine triggers a state transition
 	// by sending desired next state to the chan returned by Hijack.
 	SuperMachine interface {
-		Machine
 		Hijack() chan<- Fn
 		// SubMachine returns a simple sub-state Machine with the given queue length
 		// and (optional) initial state. If nil is given for the initial state of the

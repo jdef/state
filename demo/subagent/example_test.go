@@ -24,7 +24,7 @@ import (
 
 func ExampleRunWith_subagent() {
 	pulse := make(chan struct{})
-	agent := subagent.New(agent.New(pulse, 10))
+	agent := subagent.New(agent.AsSuperMachine(agent.New(pulse, 10)))
 	demo.RunWith(agent, pulse)
 	// Output:
 }

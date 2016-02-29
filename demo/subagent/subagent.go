@@ -38,15 +38,12 @@ type Subagent struct {
 	agent.SubMachineInterface
 }
 
-func New(a agent.Interface) Interface {
+func New(a agent.SuperMachineInterface) Interface {
 	return &Subagent{a.SubMachine(0, happilyDisconnected).(agent.SubMachineInterface)}
 }
 
 // Subagent implements agent.Interface
 var _ agent.Interface = &Subagent{}
-
-func (ha *Subagent) Hijack() chan<- state.Fn                   { return nil } // subagent is not hijackable
-func (ha *Subagent) SubMachine(int, state.Fn) state.SubMachine { return nil } // subagent is not hijackable
 
 func (ha *Subagent) Disconnected() state.Fn { return happilyDisconnected }
 func (ha *Subagent) Connected() state.Fn    { return connectedStage1 }
