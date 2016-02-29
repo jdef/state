@@ -27,7 +27,6 @@ import (
 
 type Interface interface {
 	agent.Interface
-	internal() *Subagent
 }
 
 // Subagent is a sub-state machine implementation that extends the machine implemented
@@ -48,7 +47,6 @@ var _ agent.Interface = &Subagent{}
 func (ha *Subagent) Disconnected() state.Fn { return happilyDisconnected }
 func (ha *Subagent) Connected() state.Fn    { return connectedStage1 }
 func (ha *Subagent) Terminating() state.Fn  { return happilyTerminating }
-func (ha *Subagent) internal() *Subagent    { return ha }
 
 //
 // states of the sub-state machine
@@ -132,6 +130,8 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 				// we'll still forward the heartbeat but it may be
 				// processed after we transition to stage2. for this
 				// demo it doesn't matter if that happens.
+				// TODO(jdef) figure out how to refector this block
+				// because it's an awkward one to copy/paste
 				select {
 				case subagent.Super().Hijack() <- connectedStage2:
 					select {
