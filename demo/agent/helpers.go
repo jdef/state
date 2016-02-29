@@ -49,46 +49,6 @@ func (a *superMachine) Hijack() chan<- state.Fn                       { return a
 func (a *superMachine) SubMachine(l int, f state.Fn) state.SubMachine { return newSubMachine(a, l, f) }
 
 /*
-// hijack attempts to obtain a hijack chan from the given Machine and will return
-// a readable chan upon success.
-func hijack(m state.Machine) <-chan state.Fn {
-	for {
-		v := reflect.ValueOf(m)
-		if v.Type().Kind() == reflect.Ptr {
-			v = v.Elem()
-		}
-		v = v.FieldByName("SubMachineInterface")
-		if v.IsValid() {
-			if sm, ok := v.Interface().(SubMachineInterface); ok {
-				m = sm
-				continue
-			}
-		}
-		break
-	}
-	for {
-		v := reflect.ValueOf(m)
-		if v.Type().Kind() == reflect.Ptr {
-			v = v.Elem()
-		}
-		v = v.FieldByName("SuperMachineInterface")
-		if v.IsValid() {
-			if sm, ok := v.Interface().(SuperMachineInterface); ok {
-				m = sm
-				continue
-			}
-		}
-		break
-	}
-	if sm, ok := m.(*superMachine); ok {
-		return sm.hijackChan
-	}
-	panic(fmt.Sprintf("cannot find hijack chan: sm=%#+v", m))
-	return nil
-}
-*/
-
-/*
  * sub-state machine helper code follows
  */
 
