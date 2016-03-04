@@ -175,10 +175,10 @@ func NoTransition() Transition {
 }
 
 // TryHijack is a convenience func: attempt to hijack state transition from the
-// super-state machine `m` to state `target`. Assumes that super machine `m`
-// implements the Transition interface. Returns the state that the machine
+// super-state machine `super` to state `target`. Returns the state that the machine
 // should transition to when successful. If false is returned then the Context
-// has indicated completion prior to the state transition taking place.
+// has indicated completion prior to the state transition taking place. It's expected
+// that the `next` Transition is driven by the super-state machine, perhaps via Upon.
 func TryHijack(super SuperMachine, c Context, target Fn, next Transition) (Fn, bool) {
 	select {
 	case super.Hijack() <- target:
