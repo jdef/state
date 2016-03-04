@@ -56,13 +56,13 @@ func happilyTerminating(ctx state.Context, m state.Machine) state.Fn {
 	println("happily terminating")
 	defer println("<leaving happily terminating>")
 
-	subagent := agent.Sub(m)
+	subagent := agent.AsSub(m)
 
 	// we'd normally clean up any resources here.
 	// there's no good reason for overriding the terminating state in this
 	// case, we just do it for demo purposes.
 
-	return agent.Super(subagent).Terminating()(ctx, agent.Masquerade(subagent))
+	return agent.SuperOf(subagent).Terminating()(ctx, agent.Masquerade(subagent))
 }
 
 func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
@@ -70,8 +70,8 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily disconnected>")
 
 	var (
-		subagent = agent.Sub(m)
-		t        = state.Upon(agent.Super(subagent).Disconnected(), ctx, agent.Masquerade(subagent))
+		subagent = agent.AsSub(m)
+		t        = state.Upon(agent.SuperOf(subagent).Disconnected(), ctx, agent.Masquerade(subagent))
 	)
 
 	for {
@@ -100,8 +100,8 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected1>")
 
 	var (
-		subagent = agent.Sub(m)
-		t        = state.Upon(agent.Super(subagent).Connected(), ctx, agent.Masquerade(subagent))
+		subagent = agent.AsSub(m)
+		t        = state.Upon(agent.SuperOf(subagent).Connected(), ctx, agent.Masquerade(subagent))
 	)
 
 	for {
@@ -136,8 +136,8 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected2>")
 
 	var (
-		subagent = agent.Sub(m)
-		t        = state.Upon(agent.Super(subagent).Connected(), ctx, agent.Masquerade(subagent))
+		subagent = agent.AsSub(m)
+		t        = state.Upon(agent.SuperOf(subagent).Connected(), ctx, agent.Masquerade(subagent))
 	)
 
 	for {

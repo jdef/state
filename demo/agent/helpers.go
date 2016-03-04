@@ -140,11 +140,11 @@ func (m *masq) Source() <-chan state.Event { return m.Super().(SuperMachineInter
 func (m *masq) NextState() <-chan state.Fn { return m.Super().(SuperMachineInterface).NextState() }
 
 // Super is a convenience func that returns the super-state machine as Interface
-func Super(sub SubMachineInterface) Interface {
+func SuperOf(sub SubMachineInterface) Interface {
 	return sub.Super().(Interface)
 }
 
 // Sub is a convenience func that returns the given Machine as a SubMachineInterface
-func Sub(m state.Machine) SubMachineInterface {
+func AsSub(m state.Machine) SubMachineInterface {
 	return m.(SubMachineInterface)
 }
