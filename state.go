@@ -72,6 +72,12 @@ type (
 	// that there is no next state and that the state machine should die.
 	Fn func(Context, Machine) Fn
 
+	// Transition is implemened by state machines that support "out-of-band" requests
+	// for state transitions.
+	Transition interface {
+		NextState() <-chan Fn
+	}
+
 	// SuperMachine is implemented by state machines that support being extended
 	// by sub-state machines. A sub-state machine triggers a state transition
 	// by sending desired next state to the chan returned by Hijack.
@@ -86,7 +92,7 @@ type (
 
 	SubMachine interface {
 		Super() SuperMachine
-		Forward(Context, Event)
+		Dispatch(Context, Event)
 	}
 )
 
@@ -136,4 +142,52 @@ func Run(ctx Context, m Machine) {
 	for state != nil {
 		state = state(ctx, m)
 	}
+}
+
+// Next is a convenience func that attempts to cast the given Machine to the
+// Transition interface; upon success, the result of Transition.NextState is
+// returned, otherwise returns nil
+func Next(m Machine) <-chan Fn {
+	if t, ok := m.(Transition); ok {
+		return t.NextState()
+	}
+	return nil
+}
+
+type upon chan Fn
+
+func (u upon) NextState() <-chan Fn { return u }
+
+// Upon is a convenience func that invokes state func Fn with the given Context
+// and Machine, the result of which is returned as a future in the form of a
+// Transition.
+func Upon(f Fn, c Context, m Machine) Transition {
+	fn := make(upon)
+	go func() {
+		fn <- f(c, m)
+	}()
+	return fn
+}
+
+// NoTransition returns a Transition that never yields a state Fn
+func NoTransition() Transition {
+	return upon(nil)
+}
+
+// TryHijack is a convenience func: attempt to hijack state transition from the
+// super-state machine `m` to state `target`. Assumes that super machine `m`
+// implements the Transition interface. Returns the state that the machine
+// should transition to when successful. If false is returned then the Context
+// has indicated completion prior to the state transition taking place.
+func TryHijack(super SuperMachine, c Context, target Fn, next Transition) (Fn, bool) {
+	select {
+	case super.Hijack() <- target:
+		select {
+		case <-c.Done():
+		case f := <-next.NextState():
+			return f, true
+		}
+	case <-c.Done():
+	}
+	return nil, false
 }

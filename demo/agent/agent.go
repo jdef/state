@@ -29,7 +29,6 @@ type (
 		Terminating() state.Fn
 
 		get() *Agent
-		hijack() <-chan state.Fn // support for sub-state machines
 	}
 
 	Agent struct {
@@ -60,13 +59,13 @@ func (a *Agent) Disconnected() state.Fn { return disconnected }
 func (a *Agent) Connected() state.Fn    { return connected }
 func (a *Agent) Terminating() state.Fn  { return terminating }
 
-func (a *Agent) get() *Agent             { return a }
-func (a *Agent) hijack() <-chan state.Fn { return nil }
+func (a *Agent) get() *Agent { return a }
 
 func disconnected(ctx state.Context, m state.Machine) state.Fn {
 	println("disconnected")
 	defer println("<leaving disconnected>")
 	agent := m.(Interface)
+	next := state.Next(m) // support hijackers
 	for {
 		select {
 		case event := <-m.Source():
@@ -77,7 +76,7 @@ func disconnected(ctx state.Context, m state.Machine) state.Fn {
 			case *Heartbeat:
 				agent.get().doHeartbeat(ctx, event)
 			}
-		case fn := <-agent.hijack():
+		case fn := <-next:
 			return fn
 		case <-ctx.Done():
 			return agent.Terminating()
@@ -89,6 +88,7 @@ func connected(ctx state.Context, m state.Machine) state.Fn {
 	println("connected")
 	defer println("<leaving connected>")
 	agent := m.(Interface)
+	next := state.Next(m) // support hijackers
 	for {
 		select {
 		case event := <-m.Source():
@@ -99,7 +99,7 @@ func connected(ctx state.Context, m state.Machine) state.Fn {
 			case *Heartbeat:
 				agent.get().doHeartbeat(ctx, event)
 			}
-		case fn := <-agent.hijack():
+		case fn := <-next:
 			return fn
 		case <-ctx.Done():
 			return agent.Terminating()

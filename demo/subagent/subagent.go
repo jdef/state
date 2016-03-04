@@ -38,7 +38,7 @@ type Subagent struct {
 }
 
 func New(a agent.SuperMachineInterface) Interface {
-	return &Subagent{a.SubMachine(0, happilyDisconnected).(agent.SubMachineInterface)}
+	return &Subagent{a.SubMachineInterface(0, happilyDisconnected)}
 }
 
 // Subagent implements agent.Interface
@@ -56,13 +56,13 @@ func happilyTerminating(ctx state.Context, m state.Machine) state.Fn {
 	println("happily terminating")
 	defer println("<leaving happily terminating>")
 
-	subagent := m.(agent.SubMachineInterface)
+	subagent := agent.Sub(m)
 
 	// we'd normally clean up any resources here.
 	// there's no good reason for overriding the terminating state in this
 	// case, we just do it for demo purposes.
 
-	return subagent.Super().(agent.Interface).Terminating()(ctx, agent.Masquerade(subagent))
+	return agent.Super(subagent).Terminating()(ctx, agent.Masquerade(subagent))
 }
 
 func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
@@ -70,15 +70,9 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily disconnected>")
 
 	var (
-		subagent = m.(agent.SubMachineInterface)
-		fn       = make(chan state.Fn)
+		subagent = agent.Sub(m)
+		t        = state.Upon(agent.Super(subagent).Disconnected(), ctx, agent.Masquerade(subagent))
 	)
-
-	// we're happy to let upstream's Disconnected state handler
-	// drive the state transition when it's ready
-	go func() {
-		fn <- subagent.Super().(agent.Interface).Disconnected()(ctx, agent.Masquerade(subagent))
-	}()
 
 	for {
 		select {
@@ -93,9 +87,9 @@ func happilyDisconnected(ctx state.Context, m state.Machine) state.Fn {
 			}
 
 			// forward the event upstream
-			subagent.Forward(ctx, event)
+			subagent.Dispatch(ctx, event)
 
-		case f := <-fn:
+		case f := <-t.NextState():
 			return f
 		}
 	}
@@ -106,15 +100,9 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected1>")
 
 	var (
-		subagent = m.(agent.SubMachineInterface)
-		fn       = make(chan state.Fn)
+		subagent = agent.Sub(m)
+		t        = state.Upon(agent.Super(subagent).Connected(), ctx, agent.Masquerade(subagent))
 	)
-
-	// we're happy to let upstream's Connected state handler
-	// drive the state transition when it's ready
-	go func() {
-		fn <- subagent.Super().(agent.Interface).Connected()(ctx, agent.Masquerade(subagent))
-	}()
 
 	for {
 		select {
@@ -126,28 +114,18 @@ func connectedStage1(ctx state.Context, m state.Machine) state.Fn {
 
 			case *agent.Heartbeat:
 				println(".. happily entering connectedStage2")
-
-				// we'll still forward the heartbeat but it may be
-				// processed after we transition to stage2. for this
-				// demo it doesn't matter if that happens.
-				// TODO(jdef) figure out how to refector this block
-				// because it's an awkward one to copy/paste
-				select {
-				case subagent.Super().Hijack() <- connectedStage2:
-					select {
-					case <-ctx.Done():
-					case f := <-fn:
-						return f
-					}
-				case <-ctx.Done():
+				f, ok := state.TryHijack(subagent.Super(), ctx, connectedStage2, t)
+				if ok {
+					return f
 				}
+
 			default:
 			}
 
 			// forward the event upstream
-			subagent.Forward(ctx, event)
+			subagent.Dispatch(ctx, event)
 
-		case f := <-fn:
+		case f := <-t.NextState():
 			return f
 		}
 	}
@@ -158,15 +136,9 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 	defer println("<leaving happily connected2>")
 
 	var (
-		subagent = m.(agent.SubMachineInterface)
-		fn       = make(chan state.Fn)
+		subagent = agent.Sub(m)
+		t        = state.Upon(agent.Super(subagent).Connected(), ctx, agent.Masquerade(subagent))
 	)
-
-	// we're happy to let upstream's Connected state handler
-	// drive the state transition when it's ready
-	go func() {
-		fn <- subagent.Super().(agent.Interface).Connected()(ctx, agent.Masquerade(subagent))
-	}()
 
 	for {
 		select {
@@ -181,9 +153,9 @@ func connectedStage2(ctx state.Context, m state.Machine) state.Fn {
 			}
 
 			// forward the event upstream
-			subagent.Forward(ctx, event)
+			subagent.Dispatch(ctx, event)
 
-		case f := <-fn:
+		case f := <-t.NextState():
 			return f
 		}
 	}
