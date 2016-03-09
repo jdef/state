@@ -28,4 +28,4 @@ I've also tried to prevent private field/func access bleeding from `agent.go` in
 
 ### TODOs
 
-- [ ] build a Golang code generator that generates `helper.go`-like files for packages containing state machines.
+- [x] build a Golang code generator that generates `helper.go`-like files for packages containing state machines.
