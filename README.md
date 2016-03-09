@@ -23,8 +23,8 @@ The example file in the package will run the agent (via `go test -v ./demo/agent
 
 The state machine implementation of this demo agent is special: it may be extended.
 Such is illustrated in the `demo/subagent` package, where the `Connected` state is broken into two stages.
-I've attempted to keep most the ugly interface casting confined to the `helper` module of `package agent`.
-I've also tried to prevent private field/func access bleeding from `agent.go` into `helper.go`.
+I've attempted to keep most the ugly interface casting confined to the helper module of `package agent`.
+I've also tried to prevent private field/func access bleeding from `agent.go` into `helper_generated.go`.
 
 ### TODOs
 
