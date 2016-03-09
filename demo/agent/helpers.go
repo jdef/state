@@ -16,11 +16,6 @@ limitations under the License.
 
 package agent
 
-// TODO(jdef) all of this code could easily be auto-generated for state machines that
-// want to support sub-state machine extension. Or instead of auto-generation just copy
-// this file to the package containing the state machine that you want to convert into
-// a super-state machine (assumes your state machine exposes its own Interface).
-
 import (
 	"github.com/jdef/state"
 )
@@ -41,21 +36,21 @@ type (
 		SubMachineInterface(int, state.Fn) SubMachineInterface
 	}
 
-	superMachine struct {
+	superMachineInterfaceImpl struct {
 		Interface
 		hijackChan chan state.Fn
 	}
 )
 
 func AsSuperMachine(i Interface) SuperMachineInterface {
-	return &superMachine{Interface: i, hijackChan: make(chan state.Fn)}
+	return &superMachineInterfaceImpl{Interface: i, hijackChan: make(chan state.Fn)}
 }
 
-func (a *superMachine) NextState() <-chan state.Fn                    { return a.hijackChan }
-func (a *superMachine) Hijack() chan<- state.Fn                       { return a.hijackChan }
-func (a *superMachine) SubMachine(l int, f state.Fn) state.SubMachine { return newSubMachine(a, l, f) }
+func (a *superMachineInterfaceImpl) NextState() <-chan state.Fn                    { return a.hijackChan }
+func (a *superMachineInterfaceImpl) Hijack() chan<- state.Fn                       { return a.hijackChan }
+func (a *superMachineInterfaceImpl) SubMachine(l int, f state.Fn) state.SubMachine { return newSubMachine(a, l, f) }
 
-func (a *superMachine) SubMachineInterface(queueLen int, initialFn state.Fn) SubMachineInterface {
+func (a *superMachineInterfaceImpl) SubMachineInterface(queueLen int, initialFn state.Fn) SubMachineInterface {
 	return a.SubMachine(queueLen, initialFn).(SubMachineInterface)
 }
 
@@ -71,28 +66,28 @@ type (
 		state.SubMachine
 	}
 
-	// subMachine is a helper for quickly building sub-state machines that
+	// subMachineInterfaceImpl is a helper for quickly building sub-state machines that
 	// extend Agent functionality. Sub-state machines typically need their
 	// own event queue and may want to override the initial state func.
-	subMachine struct {
+	subMachineInterfaceImpl struct {
 		SuperMachineInterface
 		events       chan state.Event
 		initialState state.Fn
 	}
 )
 
-// subMachine implements state.SubMachineInterface
-var _ SubMachineInterface = &subMachine{}
+// subMachineInterfaceImpl implements state.SubMachineInterface
+var _ SubMachineInterface = &subMachineInterfaceImpl{}
 
 func newSubMachine(super SuperMachineInterface, queueLength int, initialState state.Fn) state.SubMachine {
-	return &subMachine{
+	return &subMachineInterfaceImpl{
 		SuperMachineInterface: super,
 		events:                make(chan state.Event, queueLength),
 		initialState:          initialState,
 	}
 }
 
-func (m *subMachine) InitialState() state.Fn {
+func (m *subMachineInterfaceImpl) InitialState() state.Fn {
 	if m.initialState != nil {
 		return m.initialState
 	}
@@ -103,7 +98,7 @@ func (m *subMachine) InitialState() state.Fn {
 // probably have a buffered event queue if there's a party external to the state
 // machine substrate that's also feeding events into the machine, otherwise this
 // may block indefinitely.
-func (m *subMachine) Dispatch(ctx state.Context, e state.Event) {
+func (m *subMachineInterfaceImpl) Dispatch(ctx state.Context, e state.Event) {
 	select {
 	case <-ctx.Done():
 		return
@@ -111,33 +106,33 @@ func (m *subMachine) Dispatch(ctx state.Context, e state.Event) {
 	}
 }
 
-func (m *subMachine) Source() <-chan state.Event                { return m.events }
-func (m *subMachine) Sink() chan<- state.Event                  { return m.events }
-func (m *subMachine) Super() state.SuperMachine                 { return m.SuperMachineInterface }
-func (m *subMachine) Hijack() chan<- state.Fn                   { return nil } // is not hijackable
-func (m *subMachine) NextState() <-chan state.Fn                { return nil } // is not hijackable
-func (m *subMachine) SubMachine(int, state.Fn) state.SubMachine { return nil } // is not hijackable
+func (m *subMachineInterfaceImpl) Source() <-chan state.Event                { return m.events }
+func (m *subMachineInterfaceImpl) Sink() chan<- state.Event                  { return m.events }
+func (m *subMachineInterfaceImpl) Super() state.SuperMachine                 { return m.SuperMachineInterface }
+func (m *subMachineInterfaceImpl) Hijack() chan<- state.Fn                   { return nil } // is not hijackable
+func (m *subMachineInterfaceImpl) NextState() <-chan state.Fn                { return nil } // is not hijackable
+func (m *subMachineInterfaceImpl) SubMachine(int, state.Fn) state.SubMachine { return nil } // is not hijackable
 
 // Masquerade returns a reference to an imposter of the super-machine that may
 // be passed to the super-machine's state handlers for upstream event delegation.
 // The Source of the returned instance is expected to reference the source event
 // stream of the actual super-machine. All other interface funcs may be overridden
 // by the sub-machine implementation.
-func Masquerade(m SubMachineInterface) state.Machine { return &masq{m} }
+func Masquerade(m SubMachineInterface) state.Machine { return &masqInterface{m} }
 
-type masq struct {
+type masqInterface struct {
 	SubMachineInterface
 }
 
-// Source returns the upstream source so that we may pass this masq instance
+// Source returns the upstream source so that we may pass this masqInterface instance
 // to a super-state handler and it will read events from its own source, instead
 // of sub-machine's.
-func (m *masq) Source() <-chan state.Event { return m.Super().(SuperMachineInterface).Source() }
+func (m *masqInterface) Source() <-chan state.Event { return m.Super().(SuperMachineInterface).Source() }
 
-// NextState returns the upstream NextState so that we may pass this masq instance
+// NextState returns the upstream NextState so that we may pass this masqInterface instance
 // to a super-state handler and it will read states from the super-machine helper
 // associated with this sub-state machine.
-func (m *masq) NextState() <-chan state.Fn { return m.Super().(SuperMachineInterface).NextState() }
+func (m *masqInterface) NextState() <-chan state.Fn { return m.Super().(SuperMachineInterface).NextState() }
 
 // Super is a convenience func that returns the super-state machine as Interface
 func SuperOf(sub SubMachineInterface) Interface {
