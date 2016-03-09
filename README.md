@@ -4,6 +4,8 @@ This is experimental software.
 It almost certainly has sharp edges.
 Handle with care.
 
+* go:generate templates require Golang 1.6+
+
 ## State
 
 This package was inspired by the lexical scanner in Golang, presented [here](https://www.youtube.com/watch?v=HxaD_trXwRE).
