@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate gosm -o helpers.go
+//go:generate gosm -o helpers_generated.go -iface Interface
 
 package agent
 
